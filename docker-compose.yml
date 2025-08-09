@@ -1,0 +1,133 @@
+
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: roof-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 3s
+      timeout: 5s
+      retries: 20
+    networks:
+      - roof
+
+  opensearch:
+    image: opensearchproject/opensearch:2.13.0
+    container_name: roof-opensearch
+    environment:
+      - discovery.type=single-node
+      - DISABLE_SECURITY_PLUGIN=true
+      - plugins.security.disabled=true
+      - OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    ports:
+      - "9200:9200"
+      - "9600:9600"
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    networks:
+      - roof
+
+  dashboards:
+    image: opensearchproject/opensearch-dashboards:2.13.0
+    container_name: roof-dashboards
+    environment:
+      - OPENSEARCH_HOSTS=["http://opensearch:9200"]
+    ports:
+      - "5601:5601"
+    depends_on:
+      - opensearch
+    networks:
+      - roof
+
+  redis:
+    image: redis:7-alpine
+    container_name: roof-redis
+    ports:
+      - "6379:6379"
+    networks:
+      - roof
+
+  api:
+    build:
+      context: ./api
+    container_name: roof-api
+    env_file:
+      - .env
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - AUTO_CREATE_TABLES=${AUTO_CREATE_TABLES}
+      - OPENSEARCH_URL=${OPENSEARCH_URL}
+      - REDIS_URL=${REDIS_URL}
+    volumes:
+      - ./api/app:/app/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    ports:
+      - "${API_PORT}:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      opensearch:
+        condition: service_started
+      redis:
+        condition: service_started
+    networks:
+      - roof
+
+  worker:
+    build:
+      context: ./worker
+    container_name: roof-worker
+    env_file:
+      - .env
+    volumes:
+      - ./worker/app:/app/app
+    command: celery -A app.worker:celery_app worker --loglevel=INFO
+    depends_on:
+      - api
+      - redis
+      - opensearch
+      - postgres
+    networks:
+      - roof
+
+  web:
+    build:
+      context: ./web
+    container_name: roof-web
+    env_file:
+      - .env
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    command: npm run dev
+    ports:
+      - "${WEB_PORT}:3000"
+    depends_on:
+      - api
+    networks:
+      - roof
+
+networks:
+  roof:
+    driver: bridge
+
+volumes:
+  pgdata:
+  opensearch-data:
+
+
