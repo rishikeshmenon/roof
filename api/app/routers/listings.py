@@ -2,8 +2,9 @@ from fastapi import APIRouter, Depends, Query, HTTPException
 from sqlalchemy.orm import Session
 
 from app.db import get_db
-from app.schemas import Listing, ListingCreate
+from app.schemas import Listing, ListingCreate, ListingDetail
 from app import crud
+from app.models import Listing as ListingModel
 
 
 router = APIRouter()
@@ -37,16 +38,14 @@ def get_listings(
     return [Listing.model_validate(r) for r in rows]
 
 
-@router.get("/listings/{listing_id}", response_model=Listing)
-def get_listing(listing_id: int, db: Session = Depends(get_db)) -> Listing:
-    row = db.get(crud.models.Listing, listing_id) if hasattr(crud, 'models') else None
-    # Fallback without relying on attribute
-    if row is None:
-        from app.models import Listing as ListingModel
-        row = db.get(ListingModel, listing_id)
+@router.get("/listings/{listing_id}", response_model=ListingDetail)
+def get_listing(listing_id: int, db: Session = Depends(get_db)) -> ListingDetail:
+    row = db.get(ListingModel, listing_id)
     if not row:
         raise HTTPException(status_code=404, detail="Listing not found")
-    return Listing.model_validate(row)
+    # Ensure images relationship is loaded
+    _ = len(row.images)
+    return ListingDetail.model_validate(row)
 
 
 

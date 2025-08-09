@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     redis_url: str = "redis://redis:6379/0"
     api_port: int = 8000
     auto_create_tables: bool = True
+    openai_api_key: str | None = None
 
     class Config:
         env_file = ".env"

@@ -5,7 +5,9 @@ import threading
 
 from app.db import get_db, init_database
 from app.opensearch_client import get_opensearch_client, ensure_index
+from app.tasks import celery_app as _celery
 from app.routers import listings as listings_router
+from app.routers import ingest as ingest_router
 from app.db import SessionLocal
 from app.seed import seed_if_empty
 
@@ -74,5 +76,6 @@ def health(db: Session = Depends(get_db)) -> dict:
 
 
 app.include_router(listings_router.router, prefix="/api", tags=["listings"])
+app.include_router(ingest_router.router, prefix="/api", tags=["ingest"])
 
 

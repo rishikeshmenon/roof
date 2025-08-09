@@ -114,7 +114,7 @@ services:
     volumes:
       - ./web:/app
       - /app/node_modules
-    command: npm run dev
+    command: sh -c "if [ ! -d node_modules ]; then npm install; fi; npm run dev"
     ports:
       - "${WEB_PORT}:3000"
     depends_on:

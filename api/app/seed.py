@@ -2,7 +2,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, timedelta
 
-from app.models import Listing
+from app.models import Listing, ListingImage
 
 
 def seed_if_empty(db: Session) -> None:
@@ -32,6 +32,24 @@ def seed_if_empty(db: Session) -> None:
         for i in range(1, 16)
     ]
     db.add_all(sample)
+    db.flush()
+    # Attach a couple of images to first few listings
+    for i, listing in enumerate(sample[:6], start=1):
+        img1 = ListingImage(
+            listing_id=listing.id,
+            url=f"https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=960&q=80&sig={i}",
+            width=960,
+            height=640,
+            order_index=0,
+        )
+        img2 = ListingImage(
+            listing_id=listing.id,
+            url=f"https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=960&q=80&sig={i+100}",
+            width=960,
+            height=640,
+            order_index=1,
+        )
+        db.add_all([img1, img2])
     db.commit()
 
 

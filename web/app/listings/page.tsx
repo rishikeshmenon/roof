@@ -2,6 +2,7 @@
 
 import { useMemo, useState } from 'react'
 import useSWR from 'swr'
+import Link from 'next/link'
 import dynamic from 'next/dynamic'
 
 type Listing = {
@@ -83,11 +84,11 @@ export default function ListingsPage() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {listings.map(l => (
-            <div key={l.id} className="rounded border bg-white p-4">
+            <Link href={`/listings/${l.id}`} key={l.id} className="rounded border bg-white p-4 hover:shadow-sm transition">
               <div className="font-medium mb-1 truncate">{l.title}</div>
               <div className="text-sm text-gray-700">${(l.price_cents/100).toLocaleString(undefined, {maximumFractionDigits:0})} CAD</div>
               <div className="text-xs text-gray-500">{l.bedrooms ?? 'N/A'} bd · {l.bathrooms ?? 'N/A'} ba</div>
-            </div>
+            </Link>
           ))}
         </div>
       </div>

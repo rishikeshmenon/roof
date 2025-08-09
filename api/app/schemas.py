@@ -35,4 +35,33 @@ class Listing(ListingBase):
         from_attributes = True
 
 
+class ListingImage(BaseModel):
+    id: int
+    url: str
+    checksum: str | None = None
+    width: int | None = None
+    height: int | None = None
+    order_index: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class ListingDetail(Listing):
+    images: list[ListingImage] = []
+
+
+class IngestRequest(BaseModel):
+    source_url: str
+    source: str = "marketplace"
+    raw_html: str | None = None
+    raw_json: dict | None = None
+
+
+class IngestResponse(BaseModel):
+    created_listing_id: int | None = None
+    status: str
+    reason: str | None = None
+
+
 
