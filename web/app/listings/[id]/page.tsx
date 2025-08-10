@@ -17,6 +17,8 @@ type Listing = {
   latitude?: number | null
   longitude?: number | null
   images?: ListingImage[]
+  raw_address?: string | null
+  attributes?: Record<string, any> | null
 }
 
 export default function ListingDetailPage() {
@@ -69,6 +71,10 @@ export default function ListingDetailPage() {
           <h1 className="text-xl font-semibold mb-2">{data.title}</h1>
           <div className="text-gray-700 mb-4">${(data.price_cents/100).toLocaleString(undefined, {maximumFractionDigits:0})} CAD</div>
           <div className="prose max-w-none text-sm text-gray-800 whitespace-pre-wrap">{data.description || 'No description provided.'}</div>
+          <div className="mt-3 text-sm">
+            <span className="text-gray-500">Original listing:</span>{' '}
+            <a className="text-blue-600 underline" href={data.source_id} target="_blank" rel="noreferrer">Open</a>
+          </div>
         </div>
       </div>
       <div className="space-y-4">
@@ -78,6 +84,14 @@ export default function ListingDetailPage() {
             <div>{data.bedrooms ?? 'N/A'} bedrooms · {data.bathrooms ?? 'N/A'} bathrooms</div>
             <div>Furnished: {data.furnished ? 'Yes' : 'No'}</div>
             <div>Pets allowed: {data.pets_allowed ? 'Yes' : 'No'}</div>
+            {data.raw_address && <div className="mt-1">Address: {data.raw_address}</div>}
+            {data.attributes && (
+              <div className="mt-2 space-y-1">
+                {Object.entries(data.attributes).map(([k,v]) => (
+                  <div key={k}><span className="text-gray-500">{k}:</span> {String(v)}</div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
         <div className="rounded border bg-white p-4">
@@ -85,6 +99,10 @@ export default function ListingDetailPage() {
           <div className="h-64">
             <Map markers={markers} />
           </div>
+        </div>
+        <div className="rounded border bg-white p-4">
+          <div className="font-medium mb-3">Full description</div>
+          <div className="text-sm text-gray-800 whitespace-pre-wrap">{data.description || 'No description provided.'}</div>
         </div>
       </div>
     </div>

@@ -2,6 +2,7 @@ from datetime import datetime
 
 from sqlalchemy import BigInteger, Boolean, Column, DateTime, Float, ForeignKey, Integer, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 
@@ -32,6 +33,7 @@ class Listing(Base):
     status: Mapped[str] = mapped_column(String(32), default="active", index=True)
     dedup_key: Mapped[str | None] = mapped_column(String(256), index=True)
     spam_score: Mapped[float | None] = mapped_column(Float, index=True)
+    attributes: Mapped[dict | None] = mapped_column(JSONB, default=dict)
 
 
 class ListingImage(Base):

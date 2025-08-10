@@ -44,6 +44,12 @@ def init_database(max_attempts: int = 20, delay_seconds: float = 1.0) -> None:
         except Exception:
             # Ignore auto-create errors in startup; health endpoint will still surface DB readiness
             pass
+    # Ensure new columns exist for evolving schema
+    try:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE listings ADD COLUMN IF NOT EXISTS attributes JSONB"))
+    except Exception:
+        pass
 
 
 def get_db() -> Generator[Session, None, None]:

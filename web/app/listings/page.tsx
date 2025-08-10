@@ -26,8 +26,8 @@ export default function ListingsPage() {
   const [bedrooms, setBedrooms] = useState<number | undefined>()
 
   const qs = new URLSearchParams()
-  if (minPrice !== undefined) qs.set('min_price', String(minPrice))
-  if (maxPrice !== undefined) qs.set('max_price', String(maxPrice))
+  if (minPrice !== undefined && minPrice >= 0) qs.set('min_price', String(minPrice))
+  if (maxPrice !== undefined && maxPrice >= 0) qs.set('max_price', String(maxPrice))
   if (bedrooms !== undefined) qs.set('bedrooms', String(bedrooms))
   const url = `${apiBase}/api/listings?${qs.toString()}`
 
@@ -52,11 +52,11 @@ export default function ListingsPage() {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs text-gray-600">Min price (CAD)</label>
-              <input className="mt-1 w-full border rounded px-2 py-1" type="number" value={minPrice ?? ''} onChange={e => setMinPrice(e.target.value ? Number(e.target.value) : undefined)} />
+              <input className="mt-1 w-full border rounded px-2 py-1" min={0} type="number" value={minPrice ?? ''} onChange={e => setMinPrice(e.target.value ? Math.max(0, Number(e.target.value)) : undefined)} />
             </div>
             <div>
               <label className="block text-xs text-gray-600">Max price (CAD)</label>
-              <input className="mt-1 w-full border rounded px-2 py-1" type="number" value={maxPrice ?? ''} onChange={e => setMaxPrice(e.target.value ? Number(e.target.value) : undefined)} />
+              <input className="mt-1 w-full border rounded px-2 py-1" min={0} type="number" value={maxPrice ?? ''} onChange={e => setMaxPrice(e.target.value ? Math.max(0, Number(e.target.value)) : undefined)} />
             </div>
             <div>
               <label className="block text-xs text-gray-600">Bedrooms</label>

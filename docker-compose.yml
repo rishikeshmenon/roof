@@ -90,13 +90,13 @@ services:
 
   worker:
     build:
-      context: ./worker
+      context: ./api
     container_name: roof-worker
     env_file:
       - .env
     volumes:
-      - ./worker/app:/app/app
-    command: celery -A app.worker:celery_app worker --loglevel=INFO
+      - ./api/app:/app/app
+    command: celery -A app.tasks:celery_app worker --loglevel=INFO
     depends_on:
       - api
       - redis

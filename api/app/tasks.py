@@ -89,23 +89,31 @@ def process_raw_payload(payload_id: int) -> dict:
         address = None
 
         # Try AI extraction first if API key provided
+        bedrooms_val = None
+        bathrooms_val = None
+        furnished_val = None
+        pets_val = None
+        lease_term_val = None
         if settings.openai_api_key:
             try:
                 client = OpenAI(api_key=settings.openai_api_key)
                 pj = raw.payload or {}
                 raw_json = pj.get("raw_json") if isinstance(pj, dict) else None
                 raw_html = pj.get("raw_html") if isinstance(pj, dict) else None
+                raw_text = pj.get("raw_text") if isinstance(pj, dict) else None
                 prompt = (
-                    "Extract structured listing details as JSON with fields: "
-                    "title, description, price (original string), currency (3-letter), bedrooms (int or null), "
-                    "bathrooms (float or null), furnished (bool or null), pets_allowed (bool or null), "
-                    "lease_term (string or null), address (string or null), images (array of URLs). "
-                    "Do not include extraneous fields."
+                    "You are a strict information extractor for rental listings. "
+                    "Return ONLY compact JSON with keys: title, description, price, currency, bedrooms, bathrooms, "
+                    "furnished, pets_allowed, lease_term, address, images. Rules: "
+                    "- bedrooms: integer or null. bathrooms: float or null. "
+                    "- furnished and pets_allowed: booleans or null. currency: 3-letter or null. "
+                    "- images: array of absolute URLs. If unknown, set null."
                 )
                 content = (
                     f"URL: {url}\n" +
                     (f"RAW_JSON: {raw_json}\n" if raw_json else "") +
-                    (f"RAW_HTML (truncated): {str(raw_html)[:5000]}\n" if raw_html else "")
+                    (f"RAW_TEXT (truncated): {str(raw_text)[:8000]}\n" if raw_text else "") +
+                    (f"RAW_HTML (truncated): {str(raw_html)[:2000]}\n" if raw_html else "")
                 )
                 completion = client.chat.completions.create(
                     model="gpt-4o-mini",
@@ -123,6 +131,20 @@ def process_raw_payload(payload_id: int) -> dict:
                 price_cents = _normalize_price_cents(data.get("price")) or price_cents
                 address = data.get("address") or address
                 images = data.get("images") or images
+                # typed fields
+                try:
+                    b = data.get("bedrooms")
+                    bedrooms_val = int(b) if b is not None else None
+                except Exception:
+                    bedrooms_val = None
+                try:
+                    ba = data.get("bathrooms")
+                    bathrooms_val = float(ba) if ba is not None and str(ba) != "" else None
+                except Exception:
+                    bathrooms_val = None
+                furnished_val = data.get("furnished") if isinstance(data.get("furnished"), bool) else None
+                pets_val = data.get("pets_allowed") if isinstance(data.get("pets_allowed"), bool) else None
+                lease_term_val = data.get("lease_term") if isinstance(data.get("lease_term"), str) else None
             except Exception:
                 # fallback to heuristics
                 pass
@@ -133,10 +155,60 @@ def process_raw_payload(payload_id: int) -> dict:
             if pj.get("raw_json") and isinstance(pj["raw_json"], dict):
                 j = pj["raw_json"]
                 title = j.get("title") or title
-                desc = j.get("description") or desc
+                # Prefer explicit description_text > meta description > fallback
+                desc = j.get("description_text") or j.get("description_meta") or j.get("description") or desc
                 price_cents = _normalize_price_cents(j.get("price")) or price_cents
-                images = j.get("images") or images
-                address = j.get("address") or address
+                # Merge image candidates (DOM imgs + og:image)
+                imgs = []
+                for arr in (j.get("images") or [], j.get("images_meta") or []):
+                    for u in arr:
+                        if isinstance(u, str) and u.startswith("http") and u not in imgs:
+                            imgs.append(u)
+                if imgs:
+                    images = imgs
+                # Prefer explicit location_text if it looks like an address
+                address = j.get("address") or j.get("location_text") or address
+                # Capture canonical/original URL if present
+                if j.get("canonical_url"):
+                    url = j.get("canonical_url")
+
+            # Heuristic typed field extraction from raw_text as a fallback
+            rt = pj.get("raw_text") if isinstance(pj, dict) else None
+            if isinstance(rt, str) and rt:
+                import re
+                # bedrooms: look for '2 bed', '2br', '2 bd', '2 bedrooms'
+                if bedrooms_val is None:
+                    m = re.search(r"(\d+)\s*(?:bedrooms?|beds?|br|bd)\b", rt, flags=re.IGNORECASE)
+                    if m:
+                        try:
+                            bedrooms_val = int(m.group(1))
+                        except Exception:
+                            pass
+                # bathrooms: '1.5 bath', '2 ba', '2 bathrooms'
+                if bathrooms_val is None:
+                    m = re.search(r"(\d+(?:\.\d+)?)\s*(?:bath(?:rooms?)?|ba)\b", rt, flags=re.IGNORECASE)
+                    if m:
+                        try:
+                            bathrooms_val = float(m.group(1))
+                        except Exception:
+                            pass
+                # furnished/unfurnished
+                if furnished_val is None:
+                    if re.search(r"\bunfurnished\b", rt, flags=re.IGNORECASE):
+                        furnished_val = False
+                    elif re.search(r"\bfurnished\b", rt, flags=re.IGNORECASE):
+                        furnished_val = True
+                # pets allowed
+                if pets_val is None:
+                    if re.search(r"\b(no\s+pets|pets\s*not\s*allowed)\b", rt, flags=re.IGNORECASE):
+                        pets_val = False
+                    elif re.search(r"\b(pets\s*ok|pet\s*friendly|pets\s*allowed|cats\s*ok|dogs\s*ok)\b", rt, flags=re.IGNORECASE):
+                        pets_val = True
+                # lease term: try to pull '12 month', '1 year', 'month-to-month'
+                if lease_term_val is None:
+                    m = re.search(r"(\d+\s*(?:month|months|year|years)|month-?to-?month)", rt, flags=re.IGNORECASE)
+                    if m:
+                        lease_term_val = m.group(1)
 
         lat, lng = (None, None)
         if address:
@@ -145,6 +217,17 @@ def process_raw_payload(payload_id: int) -> dict:
         # Dedup by simple key
         first_image = images[0] if images else None
         key = _dedup_key("marketplace", title, price_cents, first_image)
+
+        # capture additional attributes blob for anything extra LLM extracts
+        # Preserve additional extracted attributes if present
+        extra_attrs = {}
+        try:
+            if settings.openai_api_key and 'data' in locals() and isinstance(data, dict):
+                for k in ("unit_size", "utilities_included", "parking", "laundry", "floor", "building_type"):
+                    if data.get(k) is not None:
+                        extra_attrs[k] = data.get(k)
+        except Exception:
+            pass
 
         listing = Listing(
             source="marketplace",
@@ -158,11 +241,19 @@ def process_raw_payload(payload_id: int) -> dict:
             longitude=lng,
             posted_at=datetime.utcnow(),
             dedup_key=key,
+            bedrooms=bedrooms_val,
+            bathrooms=bathrooms_val,
+            furnished=furnished_val,
+            pets_allowed=pets_val,
+            lease_term=lease_term_val,
+            attributes=extra_attrs or None,
         )
         db.add(listing)
         db.flush()
 
-        for idx, u in enumerate(images[:8]):
+        # Always attach the current images for this listing; clear old ones if reprocessing same source_id
+        db.query(ListingImage).filter(ListingImage.listing_id == listing.id).delete()
+        for idx, u in enumerate(images[:12]):
             db.add(ListingImage(listing_id=listing.id, url=u, order_index=idx))
 
         db.commit()

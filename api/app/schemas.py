@@ -30,6 +30,7 @@ class Listing(ListingBase):
     status: str
     dedup_key: str | None = None
     spam_score: float | None = None
+    attributes: dict | None = None
 
     class Config:
         from_attributes = True
@@ -56,6 +57,7 @@ class IngestRequest(BaseModel):
     source: str = "marketplace"
     raw_html: str | None = None
     raw_json: dict | None = None
+    raw_text: str | None = None
 
 
 class IngestResponse(BaseModel):
