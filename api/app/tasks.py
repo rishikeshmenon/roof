@@ -84,6 +84,8 @@ def process_raw_payload(payload_id: int) -> dict:
         url = raw.url or ""
         title = "Imported listing"
         desc = None
+        ai_desc = None
+        availability_val = None
         price_cents = _normalize_price_cents(None)
         images: list[str] = []
         address = None
@@ -102,12 +104,26 @@ def process_raw_payload(payload_id: int) -> dict:
                 raw_html = pj.get("raw_html") if isinstance(pj, dict) else None
                 raw_text = pj.get("raw_text") if isinstance(pj, dict) else None
                 prompt = (
-                    "You are a strict information extractor for rental listings. "
-                    "Return ONLY compact JSON with keys: title, description, price, currency, bedrooms, bathrooms, "
-                    "furnished, pets_allowed, lease_term, address, images. Rules: "
-                    "- bedrooms: integer or null. bathrooms: float or null. "
-                    "- furnished and pets_allowed: booleans or null. currency: 3-letter or null. "
-                    "- images: array of absolute URLs. If unknown, set null."
+                    "You are an expert rental listing analyzer. Analyze ALL the provided raw data comprehensively. "
+                    "IMPORTANT: Use ALL available data sources (raw_text, raw_html, raw_json) to reconstruct complete information. "
+                    "If description appears truncated (ends with '...', 'See more', etc.), use context from raw_text and raw_html to reconstruct the full description. "
+                    "\n\nYou MUST return ONLY a valid JSON object (no other text) with these exact keys:\n"
+                    "{\n"
+                    "  \"title\": \"clean, descriptive title\",\n"
+                    "  \"description\": \"original description from listing\",\n"
+                    "  \"ai_description\": \"YOUR comprehensive analysis combining all available information about the rental unit, including features, location details, amenities, condition, and insights\",\n"
+                    "  \"price\": \"1500\",\n"
+                    "  \"currency\": \"CAD\",\n"
+                    "  \"bedrooms\": 2,\n"
+                    "  \"bathrooms\": 1.5,\n"
+                    "  \"furnished\": true,\n"
+                    "  \"pets_allowed\": false,\n"
+                    "  \"lease_term\": \"12 months\",\n"
+                    "  \"address\": \"full address or location\",\n"
+                    "  \"availability\": \"availability information\",\n"
+                    "  \"images\": [\"array\", \"of\", \"image\", \"URLs\"]\n"
+                    "}\n\n"
+                    "CRITICAL: Return ONLY the JSON object. No explanations, no markdown, no additional text."
                 )
                 content = (
                     f"URL: {url}\n" +
@@ -124,10 +140,58 @@ def process_raw_payload(payload_id: int) -> dict:
                     temperature=0.1,
                 )
                 text = completion.choices[0].message.content or "{}"
+                print(f"OpenAI Response: {text[:500]}...")
+                
+                # Try to extract JSON from the response
                 import json
-                data = json.loads(text)
-                title = data.get("title") or title
-                desc = data.get("description") or desc
+                import re
+                
+                # Look for JSON in the response
+                json_match = re.search(r'\{.*\}', text, re.DOTALL)
+                if json_match:
+                    json_text = json_match.group(0)
+                else:
+                    json_text = text
+                
+                try:
+                    data = json.loads(json_text)
+                except json.JSONDecodeError:
+                    print(f"Failed to parse JSON: {json_text[:200]}...")
+                    data = {}
+                # 1. TITLE: Use original extension title, fallback to AI if bad
+                ai_title = data.get("title")
+                
+                # Check if extension title is good (not UI text)
+                extension_title_is_good = (
+                    title and 
+                    len(title) > 5 and 
+                    not any(word in title.lower() for word in ['notification', 'unread', 'facebook', 'marketplace', 'menu', 'message', 'imported'])
+                )
+                
+                if extension_title_is_good:
+                    # Use the original extension title
+                    print(f"✅ Using extension title: {title}")
+                elif ai_title and len(ai_title) > 10:
+                    # Fallback to AI title if extension title is bad
+                    title = ai_title
+                    print(f"🤖 Using AI title (extension title was bad): {title}")
+                else:
+                    # Final fallback
+                    title = "Property Listing"
+                    print(f"⚠️ Using generic fallback title: {title}")
+                
+                # 2. DESCRIPTION: Use ORIGINAL extension description, not AI description
+                original_desc = raw_json.get("description_text", "").strip()
+                if original_desc and len(original_desc) > 20:
+                    desc = original_desc  # Use the original Facebook description
+                    print(f"✅ Using original description ({len(desc)} chars)")
+                else:
+                    # Fallback to current description if no original found
+                    print(f"⚠️ No good original description, using current ({len(desc)} chars)")
+                
+                # 3. AI ANALYSIS: Keep as separate field
+                ai_desc = data.get("ai_description")
+                availability_val = data.get("availability")
                 price_cents = _normalize_price_cents(data.get("price")) or price_cents
                 address = data.get("address") or address
                 images = data.get("images") or images
@@ -145,7 +209,9 @@ def process_raw_payload(payload_id: int) -> dict:
                 furnished_val = data.get("furnished") if isinstance(data.get("furnished"), bool) else None
                 pets_val = data.get("pets_allowed") if isinstance(data.get("pets_allowed"), bool) else None
                 lease_term_val = data.get("lease_term") if isinstance(data.get("lease_term"), str) else None
-            except Exception:
+            except Exception as e:
+                # Log the error for debugging
+                print(f"OpenAI API Error: {str(e)}")
                 # fallback to heuristics
                 pass
 
@@ -158,14 +224,26 @@ def process_raw_payload(payload_id: int) -> dict:
                 # Prefer explicit description_text > meta description > fallback
                 desc = j.get("description_text") or j.get("description_meta") or j.get("description") or desc
                 price_cents = _normalize_price_cents(j.get("price")) or price_cents
-                # Merge image candidates (DOM imgs + og:image)
+                # Merge all image candidates (DOM imgs + og:image + background + all_images)
                 imgs = []
-                for arr in (j.get("images") or [], j.get("images_meta") or []):
-                    for u in arr:
-                        if isinstance(u, str) and u.startswith("http") and u not in imgs:
-                            imgs.append(u)
+                image_sources = [
+                    j.get("images") or [],
+                    j.get("images_meta") or [],
+                    j.get("background_images") or [],
+                    j.get("all_images") or []
+                ]
+                
+                for arr in image_sources:
+                    if isinstance(arr, list):
+                        for u in arr:
+                            if isinstance(u, str) and u.startswith("http") and u not in imgs:
+                                # Clean up image URLs
+                                clean_url = u.split('?')[0]  # Remove query params
+                                if clean_url not in imgs and any(ext in clean_url.lower() for ext in ['.jpg', '.jpeg', '.png', '.webp']):
+                                    imgs.append(clean_url)
+                
                 if imgs:
-                    images = imgs
+                    images = imgs[:12]  # Limit to 12 images
                 # Prefer explicit location_text if it looks like an address
                 address = j.get("address") or j.get("location_text") or address
                 # Capture canonical/original URL if present
@@ -234,9 +312,12 @@ def process_raw_payload(payload_id: int) -> dict:
             source_id=url,
             title=title,
             description=desc,
+            ai_description=ai_desc,
             price_cents=price_cents or 0,
             currency="CAD",
             raw_address=address,
+            availability=availability_val,
+            original_url=url,
             latitude=lat,
             longitude=lng,
             posted_at=datetime.utcnow(),

@@ -16,7 +16,7 @@ def create_listing(payload: ListingCreate, db: Session = Depends(get_db)) -> Lis
     return Listing.model_validate(listing)
 
 
-@router.get("/listings", response_model=list[Listing])
+@router.get("/listings", response_model=list[ListingDetail])
 def get_listings(
     db: Session = Depends(get_db),
     limit: int = Query(20, ge=1, le=100),
@@ -25,7 +25,7 @@ def get_listings(
     max_price: int | None = Query(None, ge=0),
     bedrooms: int | None = Query(None, ge=0),
     furnished: bool | None = Query(None),
-) -> list[Listing]:
+) -> list[ListingDetail]:
     rows = crud.list_listings(
         db,
         limit=limit,
@@ -35,7 +35,10 @@ def get_listings(
         bedrooms=bedrooms,
         furnished=furnished,
     )
-    return [Listing.model_validate(r) for r in rows]
+    # Ensure images are loaded for each listing
+    for row in rows:
+        _ = len(row.images)
+    return [ListingDetail.model_validate(r) for r in rows]
 
 
 @router.get("/listings/{listing_id}", response_model=ListingDetail)

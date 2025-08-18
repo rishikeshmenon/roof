@@ -18,6 +18,7 @@ class Listing(Base):
     source_id: Mapped[str] = mapped_column(String(128), index=True)
     title: Mapped[str] = mapped_column(String(512))
     description: Mapped[str | None] = mapped_column(Text())
+    ai_description: Mapped[str | None] = mapped_column(Text())  # AI-generated description
     price_cents: Mapped[int] = mapped_column(BigInteger, index=True)
     currency: Mapped[str] = mapped_column(String(8), default="CAD")
     bedrooms: Mapped[int | None] = mapped_column(Integer, index=True)
@@ -26,6 +27,8 @@ class Listing(Base):
     pets_allowed: Mapped[bool | None] = mapped_column(Boolean, index=True)
     lease_term: Mapped[str | None] = mapped_column(String(64), index=True)
     raw_address: Mapped[str | None] = mapped_column(String(512))
+    availability: Mapped[str | None] = mapped_column(String(256))  # availability info
+    original_url: Mapped[str | None] = mapped_column(String(1024))  # original listing URL
     latitude: Mapped[float | None] = mapped_column(Float, index=True)
     longitude: Mapped[float | None] = mapped_column(Float, index=True)
     posted_at: Mapped[datetime | None]

@@ -7,6 +7,7 @@ class ListingBase(BaseModel):
     source_id: str
     title: str
     description: str | None = None
+    ai_description: str | None = None
     price_cents: int
     currency: str = "CAD"
     bedrooms: int | None = None
@@ -15,6 +16,8 @@ class ListingBase(BaseModel):
     pets_allowed: bool | None = None
     lease_term: str | None = None
     raw_address: str | None = None
+    availability: str | None = None
+    original_url: str | None = None
     latitude: float | None = None
     longitude: float | None = None
     posted_at: datetime | None = None
